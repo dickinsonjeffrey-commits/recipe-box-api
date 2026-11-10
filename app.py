@@ -8,7 +8,7 @@ That is the point: you will add both, lesson by lesson, in Units 2 and 3.
 import sqlite3
 
 from flask import Flask, g, jsonify, request
-from werkzeug.security import generate_password_hash
+from werkzeug.security import generate_password_hash, check_password_hash
 
 DATABASE = "recipes.db"
 
@@ -136,25 +136,53 @@ def register_user():
     if not data or not data.get("username") or not data.get("password"):
         return jsonify({"error": "username and password are required"}), 400
 
-    password_hash = generate_password_hash(data["password"])
+    username = data["username"]
+    password = data["password"]
 
     db = get_db()
     try:
         cur = db.execute(
             "INSERT INTO users (username, password_hash) VALUES (?, ?)",
-            (data["username"], password_hash),
+            (username, generate_password_hash(password)),
         )
         db.commit()
     except sqlite3.IntegrityError:
-        return jsonify({"error": "a user with that username already exists"}), 409
+        return jsonify({"error": "username already taken"}), 409
+
+    user = db.execute(
+        "SELECT id, username FROM users WHERE id = ?", (cur.lastrowid,)
+    ).fetchone()
 
     return jsonify(
         {
-            "id": cur.lastrowid,
-            "username": data["username"],
+            "id": user["id"],
+            "username": user["username"],
         }
     ), 201
 
 
-if __name__ == "__main__":
-    app.run(debug=True)
+@app.post("/login")
+def login():
+    data = request.get_json(silent=True)
+
+    if not data or not data.get("username") or not data.get("password"):
+        return jsonify({"error": "username and password are required"}), 400
+
+    username = data["username"]
+    password = data["password"]
+
+    db = get_db()
+    user = db.execute(
+        "SELECT id, username, password_hash FROM users WHERE username = ?",
+        (username,),
+    ).fetchone()
+
+    if user is None or not check_password_hash(user["password_hash"], password):
+        return jsonify({"error": "invalid credentials"}), 401
+
+    return jsonify(
+        {
+            "id": user["id"],
+            "username": user["username"],
+        }
+    ), 200
