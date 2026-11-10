@@ -5,14 +5,20 @@ and it trusts everyone. There is no authentication and no authorization yet.
 That is the point: you will add both, lesson by lesson, in Units 2 and 3.
 """
 
+import os
 import sqlite3
 
 from flask import Flask, g, jsonify, request
 from werkzeug.security import generate_password_hash, check_password_hash
+from dotenv import load_dotenv
+import jwt
 
 DATABASE = "recipes.db"
 
 app = Flask(__name__)
+
+load_dotenv()
+JWT_SECRET = os.getenv("JWT_SECRET")
 
 
 def get_db():
@@ -80,7 +86,9 @@ def create_recipe():
         )
         db.commit()
     except sqlite3.IntegrityError:
-        return jsonify({"error": "a recipe with that title already exists"}), 409
+        return jsonify(
+            {"error": "a recipe with that title already exists"}
+        ), 409
     row = db.execute(
         "SELECT * FROM recipes WHERE id = ?", (cur.lastrowid,)
     ).fetchone()
@@ -110,7 +118,9 @@ def update_recipe(recipe_id):
         )
         db.commit()
     except sqlite3.IntegrityError:
-        return jsonify({"error": "a recipe with that title already exists"}), 409
+        return jsonify(
+            {"error": "a recipe with that title already exists"}
+        ), 409
     if cur.rowcount == 0:
         return jsonify({"error": "recipe not found"}), 404
     row = db.execute(
@@ -180,9 +190,19 @@ def login():
     if user is None or not check_password_hash(user["password_hash"], password):
         return jsonify({"error": "invalid credentials"}), 401
 
+    payload = {
+        "sub": str(user["id"]),
+    }
+    token = jwt.encode(payload, JWT_SECRET, algorithm="HS256")
+
     return jsonify(
         {
             "id": user["id"],
             "username": user["username"],
+            "token": token,
         }
     ), 200
+
+
+if __name__ == "__main__":
+    app.run(debug=True)
