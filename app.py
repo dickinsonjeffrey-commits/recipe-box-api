@@ -13,7 +13,7 @@ from flask import Flask, g, jsonify, request
 from werkzeug.security import generate_password_hash, check_password_hash
 from dotenv import load_dotenv
 import jwt
-from functools import wraps  # NEW
+from functools import wraps
 
 DATABASE = "recipes.db"
 
@@ -120,7 +120,7 @@ def create_recipe():
 def owner_or_admin_required(route_fn):
     @wraps(route_fn)
     def wrapper(recipe_id, *args, **kwargs):
-        # require Authorization: Bearer <token>
+        # 1) Require Authorization: Bearer <token>
         auth_header = request.headers.get("Authorization")
         if auth_header is None or not auth_header.startswith("Bearer "):
             return jsonify({"error": "Missing or invalid Authorization header"}), 401
@@ -136,20 +136,24 @@ def owner_or_admin_required(route_fn):
 
         user_id = payload.get("sub")
         role = payload.get("role")
-        db = get_db()
 
-        # ownership or admin check
-        existing = db.execute(
+        # 2) Load the recipe
+        db = get_db()
+        recipe_row = db.execute(
             "SELECT * FROM recipes WHERE id = ?", (recipe_id,)
         ).fetchone()
-        if existing is None:
+
+        if recipe_row is None:
             return jsonify({"error": "recipe not found"}), 404
 
-        if existing["owner_id"] != user_id and role != "admin":
+        # 3) Check owner or admin
+        owner_id = str(recipe_row["owner_id"]) if recipe_row["owner_id"] is not None else None
+
+        if role != "admin" and user_id != owner_id:
             return jsonify({"error": "you do not own this recipe"}), 403
 
-        # pass recipe (row), user_id, and role into the route
-        return route_fn(recipe_id, existing, user_id, role, *args, **kwargs)
+        # 4) Call the actual route with recipe_row, user_id, and role
+        return route_fn(recipe_id, recipe_row, user_id, role, *args, **kwargs)
 
     return wrapper
 
@@ -279,9 +283,9 @@ def debug_token():
             safe_payload[key] = str(value)
         return jsonify({"decoded": safe_payload})
     except jwt.ExpiredSignatureError:
-        return jsonify({"error": "Token has expired"}), 401
-    except jwt.PyJWTError as e:
-        return jsonify({"error": "Invalid token", "detail": str(e)}), 401
+        return jsonify({"error": "Token has expired, please log in again"}), 401
+    except jwt.PyJWTError:
+        return jsonify({"error": "Invalid token"}), 401
 
 
 if __name__ == "__main__":
