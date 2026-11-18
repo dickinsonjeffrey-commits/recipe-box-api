@@ -1,0 +1,7 @@
+### Unauthenticated PATCH should be 401
+PATCH http://127.0.0.1:5000/recipes/1
+Content-Type: application/json
+
+{
+  "title": "Test title"
+}
